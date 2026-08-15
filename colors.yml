@@ -61,7 +61,7 @@ caddy-image: caddy:2.11.4
 # Single-node durability is bounded by the Droplet disk. Scheduled encrypted
 # filesystem backups provide recovery from Droplet loss, but not high
 # availability; restore remains an operator procedure.
-restate-backup-r2-bucket: restate-backup
+restate-backup-r2-bucket: postgres-backup
 restate-backup-r2-endpoint: https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com
 restate-backup-r2-region: auto
 restate-backup-oncalendar: "*-*-* 02:30:00"
