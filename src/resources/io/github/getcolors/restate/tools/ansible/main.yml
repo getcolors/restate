@@ -16,7 +16,7 @@
     - ansible.builtin.systemd_service: {name: docker, enabled: true, state: started}
     - ansible.builtin.file: {path: /opt/restate/app/src, state: directory, mode: "0755"}
     - ansible.builtin.file: {path: "<{ restate-data-dir }>", state: directory, mode: "0755"}
-    - ansible.builtin.file: {path: /var/lib/restate-app, state: directory, mode: "0755"}
+    - ansible.builtin.file: {path: /var/lib/restate-app, state: directory, owner: "1000", group: "1000", mode: "0750"}
     - ansible.builtin.file: {path: "<{ restate-backup-dir }>", state: directory, mode: "0700"}
     - name: Install stack configuration
       ansible.builtin.copy:
