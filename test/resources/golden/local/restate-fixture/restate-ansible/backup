@@ -8,6 +8,8 @@ trap 'docker compose start restate app' EXIT
 tar -C /var/lib -czf "/var/backups/restate/restate-$stamp.tar.gz" restate restate-app
 RCLONE_CONFIG_R2_TYPE=s3 \
 RCLONE_CONFIG_R2_PROVIDER=Cloudflare \
+RCLONE_CONFIG_R2_REGION=auto \
+RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true \
 RCLONE_CONFIG_R2_ACCESS_KEY_ID="$RESTATE_BACKUP_R2_ACCESS_KEY_ID" \
 RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$RESTATE_BACKUP_R2_SECRET_ACCESS_KEY" \
 RCLONE_CONFIG_R2_ENDPOINT="https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com" \
