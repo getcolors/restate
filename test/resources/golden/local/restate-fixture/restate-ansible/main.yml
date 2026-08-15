@@ -76,14 +76,23 @@
       register: compose_up
       changed_when: "'Built' in (compose_up.stdout + compose_up.stderr) or 'Created' in (compose_up.stdout + compose_up.stderr) or 'Recreated' in (compose_up.stdout + compose_up.stderr)"
     - ansible.builtin.systemd_service: {name: restate-backup.timer, enabled: true, state: started}
-    - name: Wait for public application locally
-      ansible.builtin.uri:
-        url: http://127.0.0.1/health
-        status_code: 200
+    - name: Wait for the application health endpoint inside its container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - exec
+          - -T
+          - app
+          - node
+          - -e
+          - "fetch('http://127.0.0.1:8080/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+      args: {chdir: /opt/restate}
       register: local_health
+      changed_when: false
       retries: 60
       delay: 5
-      until: local_health.status == 200
+      until: local_health.rc == 0
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd_service: {daemon_reload: true}
