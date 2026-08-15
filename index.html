@@ -1,11 +1,77 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Restate Package Skill — getcolors</title>
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-4VKP1WY4QJ"></script>
-<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-4VKP1WY4QJ',{page_title:'Restate Package Skill — getcolors'});</script>
-<style>body{font:18px/1.6 system-ui;max-width:52rem;margin:4rem auto;padding:0 1rem;color:#18202a}code{background:#eef2f6;padding:.15rem .3rem}h1,h2{line-height:1.2}</style></head><body>
-<h1>Restate Package Skill</h1><p>A reproducible Green workflow for one durable Restate server and TypeScript reference application on DigitalOcean.</p>
-<h2>Boundary</h2><p>Cloudflare and Caddy expose HTTPS only. Restate ingress, administration, fabric and SDK ports remain private. The configured Amsterdam region's default VPC is discovered at runtime and is never created or hard-coded.</p>
-<h2>Recovery</h2><p>Persistent state survives service and Droplet restarts. Daily consistent R2 backups support manual disaster recovery; this single-node design does not provide high availability.</p>
-<h2>Source</h2><p><a href="https://github.com/getcolors/restate">github.com/getcolors/restate</a></p>
-</body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Provision a private single-node Restate service and TypeScript durable-workflow application on DigitalOcean with HTTPS and R2 recovery backups.">
+  <title>Restate Package Skill — getcolors</title>
+  <style>
+    :root{color-scheme:light;--ink:#1f2328;--muted:#59636e;--line:#d0d7de;--soft:#f6f8fa;--blue:#0969da;--green:#1a7f37;--warn:#9a6700}*{box-sizing:border-box}body{margin:0;color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:920px;margin:auto;padding:64px 28px 100px}h1{font-size:52px;line-height:1.05;margin:0}h2{margin-top:54px;padding-bottom:8px;border-bottom:1px solid var(--line)}h3{margin-top:30px}.lead{font-size:20px;color:var(--muted);max-width:790px}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{padding:18px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--soft)}:not(pre)>code{padding:.12em .35em;border-radius:5px;background:var(--soft)}a{color:var(--blue)}.eyebrow{color:var(--green);font-weight:700;letter-spacing:.08em}.callout{padding:16px 18px;border-left:4px solid var(--green);background:#dafbe1}.warning{border-color:var(--warn);background:#fff8c5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{padding:18px;border:1px solid var(--line);border-radius:8px}.card h3{margin-top:0}@media(max-width:650px){main{padding-top:38px}.grid{grid-template-columns:1fr}h1{font-size:40px}}
+  </style>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-4VKP1WY4QJ"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-4VKP1WY4QJ',{page_title:'Restate Package Skill — getcolors'});</script>
+</head>
+<body><main>
+  <p class="eyebrow">GREEN PACKAGE SKILL · DIGITALOCEAN · RESTATE</p>
+  <h1>Restate Package Skill</h1>
+  <p class="lead">A reproducible Green workflow for one production-oriented Restate server and TypeScript reference application, protected behind Caddy and Cloudflare on a guarded DigitalOcean Droplet.</p>
+
+  <div class="callout"><strong>Private service boundary.</strong> Only HTTPS and restricted key-only SSH are public. Restate ingress, administration, fabric, and the application SDK endpoint remain inside the Docker Compose network.</div>
+
+  <h2>Quick start</h2>
+  <pre><code>npx skills add getcolors/restate
+cp .agents/skills/package-restate-green/green ./green
+chmod +x green
+./green build
+./green create --dry-run</code></pre>
+  <p>Build renders reproducible output and dry-run walks the workflow without provider side effects. Real creation and deletion require explicit authorization.</p>
+
+  <h2>Architecture and sizing</h2>
+  <div class="grid">
+    <div class="card"><h3>Infrastructure</h3><p>OpenTofu discovers the configured region’s existing default VPC and creates one Ubuntu 24.04 Droplet and firewall. No VPC is created or hard-coded.</p></div>
+    <div class="card"><h3>Runtime</h3><p>Ansible converges a private Docker Compose stack containing Restate, the TypeScript reference application, and Caddy. Persistent Restate and activity state live under <code>/var/lib</code>.</p></div>
+    <div class="card"><h3>Network</h3><p>Cloudflare publishes the zone apex and Caddy serves origin TLS. Restate ports 8080, 9070, and 5122 never cross the Compose boundary.</p></div>
+    <div class="card"><h3>Capacity</h3><p>The desired eight-vCPU, 16 GiB class leaves headroom above Restate’s default memory pools for RocksDB, Node.js, Caddy, image builds, and reboot acceptance.</p></div>
+  </div>
+  <p>The package pins Restate Server <strong>1.7.3</strong> and TypeScript SDK <strong>1.16.6</strong>. It favors reliable production-default operation over a tuned-down development footprint.</p>
+
+  <h2>Workflow API and behavior</h2>
+  <pre><code>curl https://example.com/health
+curl -X POST -H 'content-type: application/json' \
+  -d '{"value":7}' https://example.com/workflows/my-id
+curl https://example.com/workflows/my-id</code></pre>
+  <p>The example workflow durably sleeps, fails its activity twice, succeeds on attempt three, and returns the input squared with a deterministic SHA-256 verification value. Restate’s workflow-ID boundary makes a repeated start duplicate-safe: callers receive the same ID without creating a second execution.</p>
+
+  <h2>Desired state and lifecycle</h2>
+  <p>Non-secret configuration belongs only in <code>colors.yml</code>. It describes the profile, DigitalOcean compute and SSH boundary, DNS, backend, Restate host, backup storage, and retention. The complete schema is in the <a href="skills/package-restate-green/references/configuration.md">configuration reference</a>.</p>
+  <pre><code>./green build
+./green create --dry-run
+./green create
+./green delete</code></pre>
+  <ul>
+    <li>Supply credentials only as matching <code>COLORS_PAR_*</code> environment variables.</li>
+    <li>Never export <code>COLORS_PAR_PROFILE</code> or edit generated <code>.colors/</code>.</li>
+    <li>Keep <code>compute-prevent-destroy: true</code>; deletion remains separately guarded.</li>
+    <li>Inspect generated output and the dry-run before converging live infrastructure.</li>
+  </ul>
+
+  <h2>Acceptance and operations</h2>
+  <p>The live convergence checks health, starts the caller-selected workflow, repeats the start, reboots the Droplet during the durable sleep, waits for HTTPS to recover, and verifies final status, result, and retry count. That reboot is an external persistence test, not a simulation.</p>
+  <pre><code>ssh root@SERVER 'cd /opt/restate &amp;&amp; docker compose ps'
+ssh root@SERVER 'cd /opt/restate &amp;&amp; docker compose logs --tail=200 restate app caddy'
+ssh root@SERVER 'systemctl status restate-backup.timer'</code></pre>
+  <p>Use logs and service state to diagnose the stack; do not expose a private Restate port as a shortcut.</p>
+
+  <h2>Backup, restoration, and upgrades</h2>
+  <p>A systemd timer briefly stops stateful services, archives <code>/var/lib/restate</code> and <code>/var/lib/restate-app</code>, and uploads the consistent archive to the configured R2 prefix. Restore only onto an isolated compatible replacement: stop Compose, extract the selected archive with ownership preserved, retain the stable node name, start the stack, and verify old and new workflows before moving DNS.</p>
+  <p>Before upgrading, take and verify a backup, review Restate’s immutable deployment and workflow-versioning rules, change exact pins, inspect golden output, and run tests, build, and dry-run. Long-running workflows must remain compatible with the deployed code.</p>
+
+  <div class="callout warning"><strong>Single node is durable, not highly available.</strong> A host, disk, region, or operator failure causes downtime. Backup RPO is the timer interval and restoration is manual; the prevent-destroy guard does not replace a tested recovery exercise.</div>
+
+  <h2>Development and source</h2>
+  <pre><code>bb test
+bb golden
+./scripts/launcher.sh</code></pre>
+  <p><a href="https://github.com/getcolors/restate">Source on GitHub</a>. Review every golden diff before accepting it.</p>
+</main></body>
+</html>
