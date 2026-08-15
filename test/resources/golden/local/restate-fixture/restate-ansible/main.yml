@@ -9,7 +9,7 @@
   tasks:
     - name: Install Docker and backup tooling
       ansible.builtin.apt:
-        name: [docker.io, docker-compose-v2, awscli, ca-certificates, curl]
+        name: [docker.io, docker-compose-v2, rclone, ca-certificates, curl]
         state: present
         update_cache: true
         cache_valid_time: 3600
