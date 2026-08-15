@@ -1,0 +1,43 @@
+services:
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.7.3
+    command: ["--node-name=restate-1"]
+    restart: unless-stopped
+    volumes:
+      - /var/lib/restate:/restate-data
+    networks: [internal]
+
+  app:
+    build:
+      context: ./app
+    restart: unless-stopped
+    environment:
+      RESTATE_INGRESS_URL: http://restate:8080
+      RESTATE_ADMIN_URL: http://restate:9070
+      RESTATE_SERVICE_URL: http://app:9080
+      WORKFLOW_DELAY_SECONDS: "120"
+      ACTIVITY_FAIL_ATTEMPTS: "2"
+      ACTIVITY_MAX_ATTEMPTS: "5"
+      ACTIVITY_STATE_DIR: /activity-state
+    volumes:
+      - /var/lib/restate-app:/activity-state
+    depends_on: [restate]
+    networks: [internal]
+
+  caddy:
+    image: caddy:2.11.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    networks: [internal]
+
+networks:
+  internal:
+    internal: false
+volumes:
+  caddy-data:
+  caddy-config:

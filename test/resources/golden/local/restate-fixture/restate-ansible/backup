@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /opt/restate
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+mkdir -p /var/backups/restate
+docker compose stop app restate
+trap 'docker compose start restate app' EXIT
+tar -C /var/lib -czf "/var/backups/restate/restate-$stamp.tar.gz" restate restate-app
+AWS_ACCESS_KEY_ID="$RESTATE_BACKUP_R2_ACCESS_KEY_ID" \
+AWS_SECRET_ACCESS_KEY="$RESTATE_BACKUP_R2_SECRET_ACCESS_KEY" \
+aws --endpoint-url "https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com" s3 cp \
+  "/var/backups/restate/restate-$stamp.tar.gz" \
+  "s3://restate-backup/restate-fixture/restate-$stamp.tar.gz"
+find /var/backups/restate -type f -name 'restate-*.tar.gz' -mtime +7 -delete

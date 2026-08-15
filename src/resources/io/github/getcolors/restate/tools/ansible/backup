@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /opt/restate
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+mkdir -p <{ restate-backup-dir }>
+docker compose stop app restate
+trap 'docker compose start restate app' EXIT
+tar -C /var/lib -czf "<{ restate-backup-dir }>/restate-$stamp.tar.gz" restate restate-app
+AWS_ACCESS_KEY_ID="$RESTATE_BACKUP_R2_ACCESS_KEY_ID" \
+AWS_SECRET_ACCESS_KEY="$RESTATE_BACKUP_R2_SECRET_ACCESS_KEY" \
+aws --endpoint-url "<{ restate-backup-r2-endpoint }>" s3 cp \
+  "<{ restate-backup-dir }>/restate-$stamp.tar.gz" \
+  "s3://<{ restate-backup-r2-bucket }>/<{ profile }>/restate-$stamp.tar.gz"
+find <{ restate-backup-dir }> -type f -name 'restate-*.tar.gz' -mtime +<{ restate-backup-retention-days }> -delete
