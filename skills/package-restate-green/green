@@ -50,7 +50,7 @@
 ;; cannot resolve its own library says so rather than inventing a SHA or
 ;; silently falling back to whatever is lying around. `bb pin` refuses to stamp
 ;; a dirty or unpushed HEAD for the same reason.
-(def ^:private restate-sha "c807f9b93b4cb053767c56a9afdd9ca3d09c899f")
+(def ^:private restate-sha "65b7ab1cee9aed16ac63a6f289f19ca4b45b5e80")
 
 (def ^:private restate-git-url "https://github.com/getcolors/restate.git")
 (def ^:private green-git-url "https://github.com/getcolors/green.git")
