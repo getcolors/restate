@@ -1,7 +1,12 @@
 # Restate Package Skill
 
-A Green Package Skill that provisions Restate 1.7.3 and a TypeScript reference
-workflow application on one DigitalOcean Droplet.
+A tri-colour Package Skill (green, red, blue) that provisions Restate 1.7.3 and
+a TypeScript reference workflow application on one DigitalOcean Droplet.
+
+The same deployment can run through the canonical Clojure implementation
+(`package-restate-green`), the TypeScript one (`package-restate-red`), or the
+Python one (`package-restate-blue`) — all three render byte-identical artifacts
+from one `colors.yml`, guarded by `scripts/parity.sh`.
 
 ## Architecture and sizing
 
@@ -28,7 +33,7 @@ Versions were discovered 2026-08-15 and pinned exactly:
 ## Lifecycle
 
 ```sh
-./green build
+./green build              # or ./red, ./blue
 ./green create --dry-run
 ./green create
 ```

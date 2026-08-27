@@ -2,8 +2,9 @@
 
 ## Repository
 
-`restate` is a Green Package Skill for a production-oriented, single-node
-Restate deployment on one DigitalOcean Droplet. OpenTofu discovers the configured
+`restate` is a tri-colour Package Skill (green, red, blue) for a
+production-oriented, single-node Restate deployment on one DigitalOcean
+Droplet. OpenTofu discovers the configured
 Amsterdam region's default VPC at runtime, manages the Droplet, firewall and
 Cloudflare apex record, and Ansible converges a private Docker Compose stack.
 Only Caddy ports 80/443 and key-only SSH are public. Restate ingress, admin and
@@ -16,14 +17,30 @@ under `/var/lib`; a timer takes consistent stopped-service backups to R2.
 
 ## Commands
 
+The three implementations live in the tri-colour layout, matching `clickhouse`:
+canonical Clojure in `green/` (`green/bb.edn`, `green/deps.edn`, `green/src/`,
+`green/tasks/`, tests under `green/test/clj`), TypeScript/Bun in `red/`, and
+Python/uv in `blue/`. Green is canonical: a behavioural change lands in all
+three colours in the same commit and passes `scripts/parity.sh`, which renders
+the fixture through every colour and diffs the trees — and the colour template
+trees (`red/resources`, blue's embedded `resources/`) — byte for byte. The
+fixture and the goldens are shared across colours at the repository root —
+`test/fixtures/` and `test/resources/golden/` — with `green/test/fixtures` and
+`green/test/resources` symlinks pointing at them. Each colour dir holds a
+launcher symlink to its skill payload (`green/green`, `red/red`, `blue/blue`).
+
 ```sh
-bb test
-bb golden
-./scripts/launcher.sh
-./green build
-./green create --dry-run
-./green create
-./green delete
+cd green && bb test
+cd green && bb golden
+cd green && bb golden:accept
+cd red && bun test && bun run typecheck
+cd blue && uv run pytest
+./scripts/parity.sh            # three colours, byte for byte
+./scripts/launcher.sh          # from the repository root
+cd green && ./green build
+cd green && ./green create --dry-run
+cd green && ./green create     # requires explicit authorization
+cd green && ./green delete     # guarded and destructive
 ```
 
 Never read `.envrc.private`, edit `.colors/`, export `COLORS_PAR_PROFILE`, or
@@ -32,10 +49,16 @@ create/delete requires explicit authorization.
 
 ## Coupling
 
-The package pins Green and ONCE in `deps.edn`; ONCE is used only for its backend
-provider registry. Use `GREEN_LIB_ROOT`, `ONCE_LIB_ROOT`, and `RESTATE_LIB_ROOT`
-for working-tree development. Final launchers use a pushed SHA managed by
-`bb pin`; deployment launchers are copies, not symlinks.
+The package pins Green and ONCE in `green/deps.edn`, the Red SDK and
+`package-once-red` in `red/package.json`, and the Blue SDK and
+`package-once-blue` in `blue/pyproject.toml`. All three colours pin ONCE at the
+**same rev** (frozen at `98d3cfa`) — ONCE's own parity is what guarantees its
+colours agree per commit — and ONCE is used only for its backend provider
+registry. Use `GREEN_LIB_ROOT`, `ONCE_LIB_ROOT`, and `RESTATE_LIB_ROOT` for
+working-tree development (`RESTATE_LIB_ROOT` names the repository root for
+every colour; red also accepts the `red/` dir directly). Final launchers use a
+pushed SHA managed by `bb pin`, which stamps all three payloads from their
+unpinned birth forms; deployment launchers are copies, not symlinks.
 
 ## Documentation
 

@@ -1,0 +1,43 @@
+services:
+  restate:
+    image: <{ restate-image }>
+    command: ["--node-name=<{ restate-node-name }>"]
+    restart: unless-stopped
+    volumes:
+      - <{ restate-data-dir }>:/restate-data
+    networks: [internal]
+
+  app:
+    build:
+      context: ./app
+    restart: unless-stopped
+    environment:
+      RESTATE_INGRESS_URL: http://restate:8080
+      RESTATE_ADMIN_URL: http://restate:9070
+      RESTATE_SERVICE_URL: http://app:9080
+      WORKFLOW_DELAY_SECONDS: "<{ reference-app-delay-seconds }>"
+      ACTIVITY_FAIL_ATTEMPTS: "<{ reference-app-fail-activity-attempts }>"
+      ACTIVITY_MAX_ATTEMPTS: "<{ reference-app-max-activity-attempts }>"
+      ACTIVITY_STATE_DIR: /activity-state
+    volumes:
+      - /var/lib/restate-app:/activity-state
+    depends_on: [restate]
+    networks: [internal]
+
+  caddy:
+    image: <{ caddy-image }>
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    networks: [internal]
+
+networks:
+  internal:
+    internal: false
+volumes:
+  caddy-data:
+  caddy-config:
