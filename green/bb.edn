@@ -3,10 +3,14 @@
  :tasks
  {test {:requires ([clojure.test :as t]
                    [io.github.getcolors.restate.validate-test]
+                   [io.github.getcolors.restate.ssh-test]
+                   [io.github.getcolors.restate.ssh-config-test]
                    [io.github.getcolors.restate.tools-test]
                    [io.github.getcolors.restate.workflow-test])
         :task (let [{:keys [fail error]}
                     (t/run-tests 'io.github.getcolors.restate.validate-test
+                                 'io.github.getcolors.restate.ssh-test
+                                 'io.github.getcolors.restate.ssh-config-test
                                  'io.github.getcolors.restate.tools-test
                                  'io.github.getcolors.restate.workflow-test)]
                 (System/exit (if (pos? (+ fail error)) 1 0)))}

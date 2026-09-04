@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-import re
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -15,13 +14,15 @@ from blue import tofu
 from blue.ansible import ansible_with_spec
 from blue.cli import stage_dir
 from blue.runtime import runtime
-from blue.scaffold import PRESERVE_JINJA_DELIMITERS, content_spec
+from blue.scaffold import PRESERVE_JINJA_DELIMITERS, content_spec, scaffold
+from package_once_blue import compute as once_compute
 
-from . import validate
+from . import ssh, ssh_config, validate
 
 infrastructure_tool = "restate-infrastructure"
 dns_tool = "restate-dns"
 ansible_tool = "restate-ansible"
+ansible_local_tool = "restate-ansible-local"
 ROOT = Path(__file__).parent / "resources"
 template_opts = PRESERVE_JINJA_DELIMITERS
 
@@ -43,11 +44,9 @@ def raw_spec(target: str, content: str) -> dict:
     return content_spec(target, content)
 
 
-def cidrs(opts: dict, key: str) -> list[str]:
-    value = opts.get(key)
-    xs = value if isinstance(value, list) else re.split(
-        r"[,\s]+", "" if value is None else str(value))
-    return [s for s in (str(x).strip() for x in xs) if s]
+# The source lists as validate parses them, so the template and the
+# validator can never disagree about what an entry is. ONCE's.
+cidrs = validate.cidrs
 
 
 def credential_env(opts: dict, *slots: str) -> dict[str, str] | None:
@@ -66,37 +65,58 @@ def backend_credential_env(opts: dict) -> dict[str, str] | None:
     return credential_env(opts)
 
 
-def fallback_params(opts: dict) -> dict:
-    return {"ip": "192.0.2.10", "user": "root", "sudoer": "root",
-            "name": opts.get("profile")}
+# What `build` and `--dry-run` render in place of a compute output: the
+# documentation address, shaped like the selected provider's real `params` so
+# every later stage sees the same keys either way. ONCE's.
+fallback_params = once_compute.fallback_params
 
+# Refuse to hand 192.0.2.10 to Ansible on a real converge whose compute output
+# carries no `ip`. ONCE's; `infrastructure_step` is what wires it.
+resolved_compute = once_compute.resolved_compute
 
-def output_params(result: dict) -> dict | None:
-    return (result.get("tofu/outputs") or {}).get("params")
+# `<provider>-<suffix>`, the selected provider's key. ONCE's, via validate.
+compute_key = validate.compute_key
+
+# The machine's name: `digitalocean-name` when present, else the profile.
+# ONCE's, via validate; the template derives every label from it.
+compute_name = validate.compute_name
 
 
 # ---------------------------------------------------------------- compute
 
 
 def infrastructure_data(opts: dict) -> dict:
+    """Template values for the compute stage. The name, the keypair mode and
+    the source lists are resolved here once, so the template interpolates
+    values and never branches on which provider it belongs to."""
     return {**opts,
-            "ssh-sources-hcl": tofu.hcl_list(cidrs(opts, "digitalocean-ssh-sources")),
-            "http-sources-hcl": tofu.hcl_list(cidrs(opts, "digitalocean-http-sources"))}
+            "ssh-keygen": validate.keygen(opts),
+            "compute-name": compute_name(opts),
+            "ssh-sources-hcl": tofu.hcl_list(cidrs(opts, compute_key(opts, "ssh-sources"))),
+            "http-sources-hcl": tofu.hcl_list(cidrs(opts, compute_key(opts, "http-sources")))}
+
+
+def infrastructure_specs(opts: dict) -> list[dict]:
+    """Providers are selected by template directory, not by conditionals
+    inside one file: `tools/infrastructure/<provider>/main.tf` renders to the
+    same `main.tf` whichever provider produced it."""
+    dir = tool_dir(opts, infrastructure_tool)
+    return [spec(template(f"infrastructure.{opts.get('provider-compute')}", "main.tf"),
+                 f"{dir}/main.tf", infrastructure_data(opts))]
 
 
 async def infrastructure_step(opts: dict) -> dict:
     dir = tool_dir(opts, infrastructure_tool)
-    specs = [spec(template("infrastructure", "main.tf"), f"{dir}/main.tf",
-                  infrastructure_data(opts))]
     result = await tofu.tofu_with_spec(
-        opts, specs, dir=dir, env=credential_env(opts, "provider-compute"))
+        opts, infrastructure_specs(opts),
+        dir=dir, env=credential_env(opts, "provider-compute"))
     if (result.get("blue/exit") or 0) > 0:
         return result
     if opts.get("blue/event") == "build":
         return {**result, **fallback_params(opts)}
     if opts.get("blue/event") == "delete":
         return result
-    return {**result, **fallback_params(opts), **(output_params(result) or {})}
+    return resolved_compute(result, fallback_params(opts), once_compute.output_params(result))
 
 
 # -------------------------------------------------------------------- dns
@@ -118,6 +138,41 @@ async def dns_step(opts: dict) -> dict:
              raw_spec(f"{dir}/record.tf.json", dns_json(data))]
     return await tofu.tofu_with_spec(
         opts, specs, dir=dir, env=credential_env(opts, "provider-dns"))
+
+
+# ---------------------------------------------------------- ansible (local)
+
+
+def ansible_local_data(opts: dict) -> dict:
+    """Only what a `build` genuinely knows. The address, the user and the alias
+    are run-time facts and reach the play as extra-vars instead, so the
+    rendered playbook carries no IP and is identical on every workstation (SSH
+    Config Standard §6)."""
+    return {**opts,
+            "ssh-keygen": validate.keygen(opts),
+            "ssh-config-identity-file": ssh_config.identity_file(opts)}
+
+
+def ansible_local_specs(opts: dict) -> list[dict]:
+    dir = tool_dir(opts, ansible_local_tool)
+    data = ansible_local_data(opts)
+    return [spec(template("ansible-local", name), f"{dir}/{name}", data)
+            for name in ["ansible.cfg", "inventory.ini", "main.yml"]]
+
+
+async def ansible_local_step(opts: dict) -> dict:
+    """Write or remove the `~/.ssh/config` block. The same playbook serves both
+    events; `block_state` is what distinguishes them."""
+    dir = tool_dir(opts, ansible_local_tool)
+    delete = opts.get("blue/event") == "delete"
+    return await ansible_with_spec(
+        opts, ansible_local_specs(opts),
+        dir=dir, inventory="inventory.ini",
+        playbooks={"create": "main.yml", "delete": "main.yml"},
+        extra_vars={"host_alias": ssh_config.host_alias(opts),
+                    "ip": opts.get("ip") or fallback_params(opts)["ip"],
+                    "user": opts.get("user") or "root",
+                    "block_state": "absent" if delete else "present"})
 
 
 # ---------------------------------------------------------------- ansible
@@ -179,8 +234,12 @@ def inventory(opts: dict) -> str:
 
 
 def ansible_data(opts: dict) -> dict:
+    """Template values for the Ansible stage. `ssh-private-key-path` reaches
+    ansible.cfg so convergence uses the deployment's own key in keygen mode,
+    where nothing guarantees an agent holds it."""
     return {**opts,
             "ip": opts.get("ip") or "192.0.2.10",
+            "ssh-keygen": validate.keygen(opts),
             "app-files": ["Dockerfile", "package.json", "package-lock.json",
                           "tsconfig.json", "src/index.ts"],
             "restate-backup-access-key":
@@ -209,6 +268,12 @@ def ansible_specs(opts: dict) -> list[dict]:
 
 async def ansible_step(opts: dict) -> dict:
     dir = tool_dir(opts, ansible_tool)
+    if opts.get("blue/event") == "delete" and not opts.get("ip"):
+        # No compute in state: there is no host to clean up, and the rendered
+        # inventory would fall back to 192.0.2.10. Remove the rendered tree the
+        # way a completed cleanup would and let the teardown continue.
+        return {**scaffold(opts, ansible_specs(opts)),
+                "blue/exit": 0, "restate/cleanup": "skipped-no-compute"}
     return await ansible_with_spec(
         opts, ansible_specs(opts),
         dir=dir, inventory="inventory.json",
@@ -257,9 +322,12 @@ async def acceptance_step(opts: dict) -> dict:
                   "--data", '{"value":7}', f"{base}/workflows/{id}"]
     started, start_err = await run_json(start_args, 15000)
     duplicate, duplicate_err = await run_json(start_args, 15000)
+    # The deployment's own key is selected in keygen mode (`ssh.identity_args`),
+    # because nothing guarantees an agent holds it; opt-out mode adds nothing.
     await runtime.exec(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-         f"root@{opts.get('ip')}", "systemctl reboot"], timeout_ms=20000)
+         *ssh.identity_args(opts), f"root@{opts.get('ip')}", "systemctl reboot"],
+        timeout_ms=20000)
     if start_err:
         return {**opts, "blue/exit": 1, "blue/err": f"workflow start failed: {start_err}"}
     if duplicate_err:

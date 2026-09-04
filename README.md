@@ -10,11 +10,24 @@ from one `colors.yml`, guarded by `scripts/parity.sh`.
 
 ## Architecture and sizing
 
-OpenTofu discovers `default-<digitalocean-region>` at apply time and attaches an
-Ubuntu 24.04 Droplet without creating or configuring a VPC. A DigitalOcean
-firewall exposes SSH and HTTP(S) only. Cloudflare publishes the zone apex and
-Caddy obtains origin TLS. Restate 8080/9070/5122 and the SDK endpoint remain on
-the private Compose network.
+The package advertises one compute provider, DigitalOcean
+(`provider-compute: digitalocean`), and conforms to the workspace Compute
+Provider Standard by delegating its operations to ONCE's `compute` namespace:
+the provider registry, the template directory `tools/infrastructure/digitalocean/`
+and the lifecycle wiring are this package's; the provider-switch and
+legacy-state refusals, the CIDR checks and the fail-closed state adoption on
+delete are ONCE's. OpenTofu discovers `default-<digitalocean-region>` at apply
+time and attaches an Ubuntu 24.04 Droplet without creating or configuring a
+VPC. A DigitalOcean firewall exposes SSH and HTTP(S) only. Cloudflare publishes
+the zone apex and Caddy obtains origin TLS. Restate 8080/9070/5122 and the SDK
+endpoint remain on the private Compose network.
+
+The Droplet is named after the profile unless `digitalocean-name` overrides it.
+Leave `digitalocean-ssh-keys` out and the package generates and owns the
+machine keypair at `~/.ssh/<profile>` (keygen mode); set it to an account key
+id to opt out. A real create also writes a managed `Host <profile>` block into
+`~/.ssh/config`, so `ssh <profile>` reaches the Droplet, and refuses rather
+than overwrites a hand-written stanza of that name.
 
 The desired `s-8vcpu-16gb` class leaves ample headroom above Restate 1.7's
 approximately 4.75 GiB default memory pools for runtime overhead, RocksDB,
@@ -40,8 +53,11 @@ Versions were discovered 2026-08-15 and pinned exactly:
 
 `colors.yml` is the only deployment desired-state file. Credentials are
 `COLORS_PAR_*` variables in ignored `.envrc.private`; never set
-`COLORS_PAR_PROFILE`. `build` renders only, and dry-run skips every side effect.
-Deletion remains protected by `compute-prevent-destroy: true`.
+`COLORS_PAR_PROFILE`. `build` renders only, and dry-run skips every side effect;
+neither reads `~/.ssh` or the state backend. Deletion remains protected by
+`compute-prevent-destroy: true`, refuses when the state backend cannot be read,
+and removes the `~/.ssh/config` block before the Droplet is destroyed and the
+generated keypair only after it.
 
 ## API and acceptance
 
@@ -62,9 +78,9 @@ recover and verifies the final status, result and retry count.
 ## Operations and recovery
 
 ```sh
-ssh root@SERVER 'cd /opt/restate && docker compose ps'
-ssh root@SERVER 'cd /opt/restate && docker compose logs --tail=200 restate app caddy'
-ssh root@SERVER 'systemctl status restate-backup.timer'
+ssh <profile> 'cd /opt/restate && docker compose ps'
+ssh <profile> 'cd /opt/restate && docker compose logs --tail=200 restate app caddy'
+ssh <profile> 'systemctl status restate-backup.timer'
 ```
 
 Daily backups briefly stop the stateful services, archive `/var/lib/restate`

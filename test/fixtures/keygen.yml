@@ -1,0 +1,103 @@
+# Desired state for a DigitalOcean keygen-mode test fixture. Non-secret values only.
+# Credentials belong in the gitignored .envrc.private as COLORS_PAR_* variables.
+# Never export COLORS_PAR_PROFILE: it selects this deployment's remote state.
+#
+# Required credentials:
+#   DigitalOcean    COLORS_PAR_DO_TOKEN
+#   Cloudflare      COLORS_PAR_CLOUDFLARE_API_TOKEN
+#   state in R2     COLORS_PAR_R2_ACCESS_KEY_ID
+#                   COLORS_PAR_R2_SECRET_ACCESS_KEY
+#   backups in R2   COLORS_PAR_RESTATE_BACKUP_R2_ACCESS_KEY_ID
+#                   COLORS_PAR_RESTATE_BACKUP_R2_SECRET_ACCESS_KEY
+
+profile: restate-keygen-fixture
+workdir: WORKDIR
+
+provider-compute: digitalocean
+provider-dns: cloudflare
+provider-backend: r2
+
+# Preserve this guard in committed desired state. Destruction requires an
+# explicitly authorized one-run override; never edit this flag to bypass it.
+compute-prevent-destroy: true
+
+# --- Restate and reference application --------------------------------------
+
+restate-host: restate.example.com
+restate-node-name: restate-1
+
+# Latest stable server release discovered on 2026-08-15 from the official
+# release feed: https://github.com/restatedev/restate/releases/tag/v1.7.3
+# The official self-hosting manual documents docker.restate.dev/restatedev/restate
+# at https://docs.restate.dev/server/deploy/docker.md. The tag is exact: two
+# creates must not silently deploy different server versions.
+restate-image: docker.restate.dev/restatedev/restate:1.7.3
+
+# Latest stable TypeScript SDK discovered on 2026-08-15 from the package's
+# official npm release endpoint: https://registry.npmjs.org/@restatedev/restate-sdk/latest
+restate-typescript-sdk-version: 1.16.6
+
+# Restate's single-node production guidance requires durable storage. The
+# stable node name and host path ensure container and Droplet restarts reopen
+# the same state rather than initialize a different node.
+restate-data-dir: /var/lib/restate
+restate-backup-dir: /var/backups/restate
+
+# The acceptance workflow remains asleep long enough to restart the complete
+# Droplet and then verify that execution resumes from the durable journal.
+reference-app-delay-seconds: 120
+reference-app-max-activity-attempts: 5
+reference-app-fail-activity-attempts: 2
+
+# Caddy is the sole public entry point. Restate ingress (8080), admin (9070),
+# fabric/metrics (5122), and the reference service stay on the private Compose
+# network or loopback.
+caddy-image: caddy:2.11.4
+# Optional ACME account contact; omit rather than use a placeholder.
+# caddy-acme-email: operator@example.com
+
+# --- Backups ----------------------------------------------------------------
+
+# Single-node durability is bounded by the Droplet disk. Scheduled encrypted
+# filesystem backups provide recovery from Droplet loss, but not high
+# availability; restore remains an operator procedure.
+restate-backup-r2-bucket: postgres-backup
+restate-backup-r2-endpoint: https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com
+restate-backup-r2-region: auto
+restate-backup-oncalendar: "*-*-* 02:30:00"
+restate-backup-retention-days: 7
+
+# --- DigitalOcean -----------------------------------------------------------
+
+# No `digitalocean-name`: the Droplet is named after the profile (Compute Name
+# Standard). No `digitalocean-ssh-keys`: the package generates and owns the
+# machine keypair, ~/.ssh/<profile>, and registers it as an account key named
+# after the profile (SSH Keypair Standard, keygen mode).
+digitalocean-region: ams3
+
+# Restate's production defaults reserve about 4.75 GiB across RocksDB, query,
+# Bifrost, and invoker pools before runtime overhead. 8 vCPU / 16 GiB leaves
+# headroom for Restate, the Node.js service, Caddy, backups, and restart-heavy
+# acceptance checks without tuning production defaults down to development
+# settings.
+digitalocean-size: s-8vcpu-16gb
+digitalocean-image: ubuntu-24-04-x64
+
+# No VPC ID or VPC desired-state key exists intentionally. At runtime the
+# compute stage must discover and attach the account's default VPC for ams3.
+# It must neither create a VPC nor persist a discovered UUID in this file.
+
+# SSH is key-only and used for convergence and recovery. HTTP(S) is public so
+# Cloudflare and external certificate/acceptance checks can reach the apex.
+digitalocean-ssh-sources:
+  - 0.0.0.0/0
+  - "::/0"
+digitalocean-http-sources:
+  - 0.0.0.0/0
+  - "::/0"
+
+# --- OpenTofu state ----------------------------------------------------------
+
+# Shared storage is safe because state keys are <profile>/<stage>.tfstate.
+r2-bucket: tofu-state-319271fed8bc6d2d9059362be1165f37-eu
+r2-endpoint: https://319271fed8bc6d2d9059362be1165f37.eu.r2.cloudflarestorage.com
