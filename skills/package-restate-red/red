@@ -36,7 +36,7 @@ import { homedir } from "node:os";
 // directory, which would halt Bun's upward resolution of `package-restate-red`
 // and break the development symlink at red/red.
 const PINS = {
-  "package-restate-red": "github:getcolors/restate#32c4f6bf6b99687b3f95f8373f92f39666c31f18",
+  "package-restate-red": "github:getcolors/restate#aec0f3f26050b4396784ab5af51734c6d028731e",
   "package-once-red": "github:getcolors/once#38e3cd66674a32fb96605e1b17ae6791086ad5c1",
   "red": "github:getcolors/red#db9bfe61282e2093f4098bf5a6ee0cd10added6e",
 };

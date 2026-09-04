@@ -4,7 +4,7 @@
 # dependencies = ["package-restate-blue", "blue", "package-once-blue"]
 #
 # [tool.uv.sources]
-# package-restate-blue = { git = "https://github.com/getcolors/restate.git", rev = "32c4f6bf6b99687b3f95f8373f92f39666c31f18", subdirectory = "blue" }
+# package-restate-blue = { git = "https://github.com/getcolors/restate.git", rev = "aec0f3f26050b4396784ab5af51734c6d028731e", subdirectory = "blue" }
 # blue = { git = "https://github.com/getcolors/blue.git", rev = "290f313ead5ca162875c33a049c880da017eae09" }
 # package-once-blue = { git = "https://github.com/getcolors/once.git", subdirectory = "blue", rev = "38e3cd66674a32fb96605e1b17ae6791086ad5c1" }
 #
