@@ -1,33 +1,43 @@
 # Restate Package Skill
 
 A tri-colour Package Skill (green, red, blue) that provisions Restate 1.7.3 and
-a TypeScript reference workflow application on one DigitalOcean Droplet.
+a TypeScript reference workflow application on one VM through colors-compute.
 
 The same deployment can run through the canonical Clojure implementation
 (`package-restate-green`), the TypeScript one (`package-restate-red`), or the
 Python one (`package-restate-blue`) — all three render byte-identical artifacts
 from one `colors.yml`, guarded by `scripts/parity.sh`.
 
+## Compute ownership
+
+The pinned `colors-compute` library owns provider selection, remote S3/R2
+state, deployment coordination, machine keys, network policy and the single
+node. This package supplies singleton topology and SSH/HTTP ingress, then
+uses the returned address, login user and SSH identity for its application
+steps. New provider support belongs in the library; consumers update its pin.
+The application needs a supported Ubuntu image and sufficient memory for
+Restate and the reference application. Build first to check adapter capabilities.
+
+Use `restate-ssh-sources` and `restate-http-sources` for neutral CIDR
+allowlists. Existing selected-provider source options remain compatible.
+External account key references require `ssh-private-key-path`; external
+private keys are never generated or removed. The local SSH block writes
+`IdentityFile` only for a managed deployment key.
+
+Existing `<profile>/restate-infrastructure.tfstate` is refused before
+compute mutation. Do not remove it to bypass this check: migrate ownership
+explicitly or destroy the old deployment through its original version first.
+Unreadable state and provider mismatches fail closed.
+
+The default adapter remains `digitalocean`. The node requests TCP22/80/443;
+Restate ingress, admin and fabric ports remain private to Compose.
+
 ## Architecture and sizing
 
-The package advertises one compute provider, DigitalOcean
-(`provider-compute: digitalocean`), and conforms to the workspace Compute
-Provider Standard by delegating its operations to ONCE's `compute` namespace:
-the provider registry, the template directory `tools/infrastructure/digitalocean/`
-and the lifecycle wiring are this package's; the provider-switch and
-legacy-state refusals, the CIDR checks and the fail-closed state adoption on
-delete are ONCE's. OpenTofu discovers `default-<digitalocean-region>` at apply
-time and attaches an Ubuntu 24.04 Droplet without creating or configuring a
-VPC. A DigitalOcean firewall exposes SSH and HTTP(S) only. Cloudflare publishes
-the zone apex and Caddy obtains origin TLS. Restate 8080/9070/5122 and the SDK
-endpoint remain on the private Compose network.
-
-The Droplet is named after the profile unless `digitalocean-name` overrides it.
-Leave `digitalocean-ssh-keys` out and the package generates and owns the
-machine keypair at `~/.ssh/<profile>` (keygen mode); set it to an account key
-id to opt out. A real create also writes a managed `Host <profile>` block into
-`~/.ssh/config`, so `ssh <profile>` reaches the Droplet, and refuses rather
-than overwrites a hand-written stanza of that name.
+The library owns the VM, network policy and managed machine key. Cloudflare
+publishes the zone apex and Caddy obtains origin TLS. Restate 8080/9070/5122
+and the SDK endpoint remain on the private Compose network. Ansible and the
+reboot acceptance step use the library's observed login user and SSH identity.
 
 The desired `s-8vcpu-16gb` class leaves ample headroom above Restate 1.7's
 approximately 4.75 GiB default memory pools for runtime overhead, RocksDB,

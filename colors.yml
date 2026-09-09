@@ -79,11 +79,11 @@ digitalocean-region: ams3
 # settings.
 digitalocean-size: s-8vcpu-16gb
 digitalocean-image: ubuntu-24-04-x64
-digitalocean-ssh-keys: "58495393"
+# Managed machine keys are the default. Existing keys require both settings:
+# digitalocean-ssh-keys: "58495393"
+# ssh-private-key-path: /absolute/path/to/operator-key
 
-# No VPC ID or VPC desired-state key exists intentionally. At runtime the
-# compute stage must discover and attach the account's default VPC for ams3.
-# It must neither create a VPC nor persist a discovered UUID in this file.
+# Private networking is optional and resolved by the shared library.
 
 # SSH is key-only and used for convergence and recovery. HTTP(S) is public so
 # Cloudflare and external certificate/acceptance checks can reach the apex.

@@ -15,7 +15,7 @@ from blue.ansible import ansible_with_spec
 from blue.cli import stage_dir
 from blue.runtime import runtime
 from blue.scaffold import PRESERVE_JINJA_DELIMITERS, content_spec, scaffold
-from package_once_blue import compute as once_compute
+from . import compute
 
 from . import ssh, ssh_config, validate
 
@@ -46,9 +46,6 @@ def raw_spec(target: str, content: str) -> dict:
 
 # The source lists as validate parses them, so the template and the
 # validator can never disagree about what an entry is. ONCE's.
-cidrs = validate.cidrs
-
-
 def credential_env(opts: dict, *slots: str) -> dict[str, str] | None:
     merged: dict[str, str] = {}
     for slot in [*slots, "provider-backend"]:
@@ -68,58 +65,11 @@ def backend_credential_env(opts: dict) -> dict[str, str] | None:
 # What `build` and `--dry-run` render in place of a compute output: the
 # documentation address, shaped like the selected provider's real `params` so
 # every later stage sees the same keys either way. ONCE's.
-fallback_params = once_compute.fallback_params
+def fallback_params(opts):
+    if opts.get('blue/event') in ('create','delete') and not opts.get('blue/dry-run'): raise ValueError('compute node unavailable')
+    return compute.node(compute.planned(opts))
 
-# Refuse to hand 192.0.2.10 to Ansible on a real converge whose compute output
-# carries no `ip`. ONCE's; `infrastructure_step` is what wires it.
-resolved_compute = once_compute.resolved_compute
-
-# `<provider>-<suffix>`, the selected provider's key. ONCE's, via validate.
-compute_key = validate.compute_key
-
-# The machine's name: `digitalocean-name` when present, else the profile.
-# ONCE's, via validate; the template derives every label from it.
-compute_name = validate.compute_name
-
-
-# ---------------------------------------------------------------- compute
-
-
-def infrastructure_data(opts: dict) -> dict:
-    """Template values for the compute stage. The name, the keypair mode and
-    the source lists are resolved here once, so the template interpolates
-    values and never branches on which provider it belongs to."""
-    return {**opts,
-            "ssh-keygen": validate.keygen(opts),
-            "compute-name": compute_name(opts),
-            "ssh-sources-hcl": tofu.hcl_list(cidrs(opts, compute_key(opts, "ssh-sources"))),
-            "http-sources-hcl": tofu.hcl_list(cidrs(opts, compute_key(opts, "http-sources")))}
-
-
-def infrastructure_specs(opts: dict) -> list[dict]:
-    """Providers are selected by template directory, not by conditionals
-    inside one file: `tools/infrastructure/<provider>/main.tf` renders to the
-    same `main.tf` whichever provider produced it."""
-    dir = tool_dir(opts, infrastructure_tool)
-    return [spec(template(f"infrastructure.{opts.get('provider-compute')}", "main.tf"),
-                 f"{dir}/main.tf", infrastructure_data(opts))]
-
-
-async def infrastructure_step(opts: dict) -> dict:
-    dir = tool_dir(opts, infrastructure_tool)
-    result = await tofu.tofu_with_spec(
-        opts, infrastructure_specs(opts),
-        dir=dir, env=credential_env(opts, "provider-compute"))
-    if (result.get("blue/exit") or 0) > 0:
-        return result
-    if opts.get("blue/event") == "build":
-        return {**result, **fallback_params(opts)}
-    if opts.get("blue/event") == "delete":
-        return result
-    return resolved_compute(result, fallback_params(opts), once_compute.output_params(result))
-
-
-# -------------------------------------------------------------------- dns
+infrastructure_step = compute.infrastructure_step
 
 
 def dns_json(opts: dict) -> str:
@@ -149,7 +99,7 @@ def ansible_local_data(opts: dict) -> dict:
     rendered playbook carries no IP and is identical on every workstation (SSH
     Config Standard §6)."""
     return {**opts,
-            "ssh-keygen": validate.keygen(opts),
+            "ssh-keygen": validate.keygen(opts), "ssh-identity-present": bool(opts.get("ssh-private-key-path")),
             "ssh-config-identity-file": ssh_config.identity_file(opts)}
 
 
@@ -229,8 +179,8 @@ def _pretty(value, indent=0):
 def inventory(opts: dict) -> str:
     return _pretty(
         {"all": {"children": {"restate": {"hosts": {
-            opts.get("profile"): {"ansible_host": opts.get("ip") or "192.0.2.10",
-                                  "ansible_user": "root"}}}}}})
+            opts.get("profile"): {"ansible_host": opts.get("ip") or fallback_params(opts)["ip"],
+                                  "ansible_user": opts.get("user") or fallback_params(opts)["user"]}}}}}})
 
 
 def ansible_data(opts: dict) -> dict:
@@ -238,8 +188,8 @@ def ansible_data(opts: dict) -> dict:
     ansible.cfg so convergence uses the deployment's own key in keygen mode,
     where nothing guarantees an agent holds it."""
     return {**opts,
-            "ip": opts.get("ip") or "192.0.2.10",
-            "ssh-keygen": validate.keygen(opts),
+            "ip": opts.get("ip") or fallback_params(opts)["ip"],
+            "ssh-keygen": validate.keygen(opts), "ssh-identity-present": bool(opts.get("ssh-private-key-path")),
             "app-files": ["Dockerfile", "package.json", "package-lock.json",
                           "tsconfig.json", "src/index.ts"],
             "restate-backup-access-key":
@@ -268,12 +218,8 @@ def ansible_specs(opts: dict) -> list[dict]:
 
 async def ansible_step(opts: dict) -> dict:
     dir = tool_dir(opts, ansible_tool)
-    if opts.get("blue/event") == "delete" and not opts.get("ip"):
-        # No compute in state: there is no host to clean up, and the rendered
-        # inventory would fall back to 192.0.2.10. Remove the rendered tree the
-        # way a completed cleanup would and let the teardown continue.
-        return {**scaffold(opts, ansible_specs(opts)),
-                "blue/exit": 0, "restate/cleanup": "skipped-no-compute"}
+    if opts.get('blue/event') in ('create','delete') and not opts.get('blue/dry-run') and not opts.get('ip'):
+        return {**opts,'blue/exit':1,'blue/err':'compute node unavailable'}
     return await ansible_with_spec(
         opts, ansible_specs(opts),
         dir=dir, inventory="inventory.json",
@@ -326,7 +272,7 @@ async def acceptance_step(opts: dict) -> dict:
     # because nothing guarantees an agent holds it; opt-out mode adds nothing.
     await runtime.exec(
         ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-         *ssh.identity_args(opts), f"root@{opts.get('ip')}", "systemctl reboot"],
+         *ssh.identity_args(opts), f"{opts.get('user') or 'root'}@{opts.get('ip')}", "systemctl reboot" if opts.get("user", "root") == "root" else "sudo -n -- systemctl reboot"],
         timeout_ms=20000)
     if start_err:
         return {**opts, "blue/exit": 1, "blue/err": f"workflow start failed: {start_err}"}

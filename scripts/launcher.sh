@@ -11,7 +11,7 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 cp "$launcher" "$tmp/green"; chmod +x "$tmp/green"
 sed "s#WORKDIR#.colors#" "$root/test/fixtures/colors.yml" > "$tmp/colors.yml"
 (cd "$tmp" && RESTATE_LIB_ROOT="$root" ./green build >/dev/null)
-[[ -f "$tmp/.colors/restate-fixture/restate-infrastructure/main.tf" ]]
+[[ -f "$tmp/.colors/restate-fixture/compute/shared/backend.tf.json" ]]
 # The launcher walks up for colors.yml, so any subdirectory works.
 mkdir -p "$tmp/nested/path"
 (cd "$tmp/nested/path" && RESTATE_LIB_ROOT="$root" ../../green build >/dev/null)

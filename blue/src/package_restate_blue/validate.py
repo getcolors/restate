@@ -11,56 +11,14 @@ from __future__ import annotations
 import re
 
 from blue.cli import par_name
-from package_once_blue import compute as once_compute
-from package_once_blue import ssh as once_ssh
+from . import compute
+from colors_compute.ssh import _mode
 from package_once_blue.validate import providers as once_providers
 
 profile_par = par_name("profile")
 
-# provider-compute -> what that choice implies.
-#
-# `required` are the non-secret keys that provider's template interpolates,
-# `secrets` the credentials it needs through COLORS_PAR_*, and `tofu-env` the
-# subset OpenTofu reads from the process environment itself. Keeping the three
-# together is what stops a provider being validated against one set of keys and
-# run with another -- a stage exporting a credential nobody checked for, or a
-# check demanding a key no template uses. The keys of this map are the
-# advertised providers; a provider without a template directory and a golden
-# is not advertised. One entry today: this package puts a provider firewall in
-# front of the host, so the sources are required where ONCE's own compute
-# templates need none.
-#
-# Two keys the template reads are deliberately not required. `digitalocean-name`
-# is an optional override of the profile (Compute Name Standard), and
-# `digitalocean-ssh-keys` is meaningful by its absence (SSH Keypair Standard).
-compute_providers = {
-    "digitalocean": {
-        "required": ["digitalocean-region", "digitalocean-size", "digitalocean-image",
-                     "digitalocean-ssh-sources", "digitalocean-http-sources"],
-        "secrets": ["do-token"],
-        "tofu-env": {"do-token": "DIGITALOCEAN_TOKEN"},
-    },
-}
+default_compute_provider="digitalocean"
 
-# The provider a deployment created before this package recorded one in its
-# compute output must be running: the only one it ever offered. A legacy state
-# -- `params` without `provider` -- is whatever this value says it is, and
-# `restate-digitalocean`'s R2 state may still hold one.
-default_compute_provider = "digitalocean"
-
-# How this package describes itself to ONCE's `compute`, the Compute Provider
-# Standard's operations over a package-owned registry. The registry and the
-# default are the data above; `sources` names the firewall lists the template
-# reads -- SSH must list at least one CIDR, an empty HTTP list means no public
-# HTTP. The name rules are ONCE's.
-spec: once_compute.ComputeSpec = {
-    "registry": compute_providers,
-    "default": default_compute_provider,
-    "sources": {"non_empty": ["ssh-sources"], "may_be_empty": ["http-sources"]},
-}
-
-# Every key desired state must carry whichever provider is selected. The
-# provider-scoped keys come from `compute_providers`.
 required = [
     "profile", "workdir", "provider-compute", "provider-dns", "provider-backend",
     "compute-prevent-destroy", "restate-host", "restate-node-name", "restate-image",
@@ -70,7 +28,6 @@ required = [
     "restate-backup-r2-bucket", "restate-backup-r2-endpoint",
     "restate-backup-r2-region", "restate-backup-oncalendar",
     "restate-backup-retention-days",
-    "r2-bucket", "r2-endpoint",
 ]
 
 HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$")
@@ -87,26 +44,9 @@ def env_errors(env: dict) -> list[str]:
     return []
 
 
-# `<provider>-<suffix>`: desired state names compute keys after the provider,
-# so the shared steps reach them through the selected provider rather than a
-# fixed prefix. ONCE's; named here so `tools` reads the same.
-compute_key = once_compute.compute_key
-
-# What this deployment's machine is called: `digitalocean-name` when present,
-# else the profile (Compute Name Standard). ONCE's; the template derives the
-# Droplet name, the firewall name and `params.name` from this one answer.
-compute_name = once_compute.compute_name
-
-
-def keygen(opts: dict) -> bool:
-    """Whether this deployment owns its machine keypair. Delegates to ONCE, the
-    standard's reference implementation, so one rule decides it everywhere."""
-    return once_ssh.keygen(opts)
-
-
-# A source list as desired state or an overlay string carries it. ONCE's, so
-# the validator and the template can never disagree about what an entry is.
-cidrs = once_compute.cidrs
+def keygen(opts):
+    try: return _mode(opts)['mode'] == 'managed'
+    except ValueError: return True
 
 
 def _positive_int(x) -> bool:
@@ -124,13 +64,13 @@ def state_errors(opts: dict) -> list[str]:
     provider rules, DigitalOcean's VPC refusal among them -- which are ONCE's
     over `spec`."""
     errors: list[str] = []
-    for key in [*required, *once_compute.required_keys(spec, opts)]:
+    for key in required:
         if missing(opts.get(key)):
             errors.append(f":{key} is required")
     if opts.get("provider-dns") != "cloudflare":
         errors.append(":provider-dns must be cloudflare")
-    if opts.get("provider-backend") not in ("local", "s3", "r2"):
-        errors.append(":provider-backend must be local, s3, or r2")
+    if opts.get("provider-backend") not in ("s3", "r2"):
+        errors.append(":provider-backend must be s3 or r2")
     if not isinstance(opts.get("compute-prevent-destroy"), bool):
         errors.append(":compute-prevent-destroy must be true or false")
     if not (missing(opts.get("restate-host"))
@@ -150,7 +90,7 @@ def state_errors(opts: dict) -> list[str]:
             and max_attempts <= fail_attempts):
         errors.append(":reference-app-max-activity-attempts must exceed "
                       ":reference-app-fail-activity-attempts")
-    errors += once_compute.state_errors(spec, opts)
+    errors += compute.errors(opts)
     return errors
 
 
@@ -162,7 +102,7 @@ def backend_secrets(opts: dict) -> list[str]:
 def secret_errors(opts: dict) -> list[str]:
     """Credentials a real create or delete needs: the selected compute
     provider's, Cloudflare's, the backup bucket's, and the backend's."""
-    keys = [*once_compute.secrets(spec, opts),
+    keys = [
             "cloudflare-api-token",
             "restate-backup-r2-access-key-id",
             "restate-backup-r2-secret-access-key",
@@ -173,7 +113,7 @@ def secret_errors(opts: dict) -> list[str]:
 
 def tofu_env(opts: dict, slot: str) -> dict[str, str]:
     if slot == "provider-compute":
-        return once_compute.tofu_env(spec, opts)
+        return {}
     if slot == "provider-dns":
         return {"cloudflare-api-token": "CLOUDFLARE_API_TOKEN"}
     if slot == "provider-backend":

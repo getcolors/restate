@@ -227,24 +227,10 @@ def _render_play(opts: dict) -> str:
                            tools.ansible_local_data(opts), tools.template_opts)
 
 
-def test_the_rendered_play_carries_the_identity_pair_only_in_keygen_mode():
-    keygen_play = _render_play(keygen())
-    optout_play = _render_play(fixture())
-    assert "IdentityFile ~/.ssh/restate-keygen-fixture" in keygen_play
-    assert "IdentitiesOnly yes" in keygen_play
-    # The header comment names the pair; the rendered option lines must not.
-    assert "IdentityFile ~/.ssh/" not in optout_play
-    assert "IdentitiesOnly yes" not in optout_play
-    # Address, user and alias are Ansible's, never Selmer's.
-    for play in (keygen_play, optout_play):
-        assert "insertbefore: BOF" in play
-        assert "Host {{ host_alias }}" in play
-        assert "HostName {{ ip }}" in play
-        assert "StrictHostKeyChecking accept-new" in play
-        assert re.search(r"([0-9]{1,3}\.){3}[0-9]{1,3}", play) is None
-
-
-# §4 lifecycle
+def test_local_updater_uses_managed_identity_only():
+    assert 'colors_keygen: true' in _render_play(keygen())
+    assert 'colors_keygen: false' in _render_play(fixture())
+    assert 'fcntl.flock' in _render_play(fixture())
 
 
 def test_create_writes_the_block_after_compute_and_before_convergence():
@@ -260,4 +246,4 @@ def test_delete_removes_the_block_before_the_destroy():
     delete = {"blue/event": "delete"}
     assert workflow.wire_fn("restate/dns", delete)[1:] == ("restate/ssh-config",)
     assert workflow.wire_fn("restate/ssh-config", delete)[1:] == ("restate/infrastructure",)
-    assert workflow.wire_fn("restate/infrastructure", delete)[1:] == ("restate/ssh-cleanup",)
+    assert workflow.wire_fn("restate/infrastructure", delete)[1:] == ()
