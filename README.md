@@ -20,7 +20,7 @@ Restate and the reference application. Build first to check adapter capabilities
 
 Use `restate-ssh-sources` and `restate-http-sources` for neutral CIDR
 allowlists. Existing selected-provider source options remain compatible.
-External account key references require `ssh-private-key-path`; external
+External account key references may use `ssh-private-key-path` or operator/agent SSH configuration; external
 private keys are never generated or removed. The local SSH block writes
 `IdentityFile` only for a managed deployment key.
 
